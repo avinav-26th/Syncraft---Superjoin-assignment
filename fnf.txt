@@ -1,0 +1,101 @@
+1. only gets synced when the update is saved
+2. if we select multiple rows or columns and then do some editing, it crashes
+3. if we write something on an un-named column, it does not gets registered or anything, this is a major flaw
+4. userA and userB mulitplayer mode enable
+5. are we managing different sheets, or just a single sheet? how are we managing different sheets of a single spreadsheet document
+6. fix the production-level bot allowance
+7. figure out the entire auth flow and implement it
+8. reading any changes only when saved, otherwise not
+9. the list is not scrollable, give some toast that the data has been updated, and also make the ui a bit smaller, otherwise managing a very big data-table from our dashboard will become a UX nighmare, infact, the cell-edit text area becomes to wide
+10. handle the race condition and also give a discarded data tab, so that the admin can decide what thing to actually discard, some important information should not be punished due to lww
+11. add a manual refresh btn in our dashboard which will refersh the dashboard, basically again it will establish connection, just for extra sense of security to the user
+12. we should make the table that it can be customisable, to how certain columns and rows only, and also add paginations and infinte scroll option
+13. the table in our dashboard should be sortable, according to row number and last updated, both in increasig and decreasing order
+14. do i have to initialize separate git for each of the sub-repos, like different for backend, and dashboard?
+
+
+
+
+
+
+
+
+### **Category 1: Google Script & Sheets Logic (The Source)**
+
+*These issues happen inside the Google Spreadsheet itself.*
+
+* **#2 Multi-Row Crash:** The script currently fails if you paste data or drag-to-fill (handling ranges vs. single cells).
+* **#3 Unnamed Columns:** The script ignores data if Row 1 is empty. We need a fallback (e.g., auto-generating "Column_C").
+* **#5 Multiple Sheets:** Currently, we lock it to "Sheet1". We need to send the "Sheet Name" to the backend so we can support multiple tabs in one file.
+* **#1 & #8 Sync on Save:** Clarify triggers. (Google `onEdit` naturally waits for "Enter" or "Tab", but we need to ensure the Dashboard only sends data when you explicitly finish editing).
+
+### **Category 2: Backend & Database (The Brain)**
+
+*These require changing `server.js` or the TiDB Schema.*
+
+* **#10 Race Conditions & Discarded Tab:** We need a new table (`sync_conflicts`) to store data that lost the "Last Write Wins" battle, so the Admin can restore it later.
+* **#12 Pagination API:** The backend currently sends *all* rows. We need to modify the SQL query to send chunks (e.g., `LIMIT 50 OFFSET 0`).
+* **#4 Multiplayer Identity:** Ensure we are correctly capturing and storing the `user_email` for every single transaction to support User A vs. User B history.
+
+### **Category 3: Dashboard UI/UX (The Face)**
+
+*These are purely Next.js / Frontend changes.*
+
+* **#9 UI Polish:** Fix scrolling, toast notifications, cell width, and compact design.
+* **#11 Manual Refresh:** Add a button to force-fetch the latest data.
+* **#12 Pagination UI:** Add "Next/Previous" buttons and "Show/Hide Columns" toggles.
+* **#13 Sorting:** Implement sorting logic for Row ID and Timestamp.
+
+### **Category 4: Security & Auth (The Guard)**
+
+*These are the final "Production" layers.*
+
+* **#7 Auth Flow:** Implementing a login system (likely NextAuth) so the Dashboard isn't open to the public.
+* **#6 Bot Allowance:** Handling the "Unverified App" warning and streamlining the service account sharing process.
+
+---
+
+### **The Execution Plan**
+
+I propose we tackle these in **4 distinct Sprint Cycles**. We finish one cycle completely before touching the next.
+
+#### **Sprint 1: Stability & Core Logic (Fixing the Crashes)**
+
+*Focus: Google Script & Backend Logic.*
+
+1. **Fix Multi-Cell Edit (#2):** Update Script to loop through all cells in a range (e.g., if user drags a value down 10 rows).
+2. **Fix Unnamed Columns (#3):** Update Script to send a fallback index if the header is missing.
+3. **Support Multiple Sheets (#5):** Update Script to send `sheet_name` and Backend to store it.
+
+#### **Sprint 2: Data Integrity (The "Discarded" Tab)**
+
+*Focus: Backend & Conflict Handling.*
+
+1. **Conflict Table (#10):** Create a new database table for rejected edits.
+2. **Update Logic:** Modify the backend to save "loser" data instead of deleting it.
+3. **Frontend View:** Create a simple "Conflict Log" page in the dashboard.
+
+#### **Sprint 3: The Dashboard Overhaul (UX)**
+
+*Focus: Frontend Polish.*
+
+1. **Styling (#9):** make the table scrollable, compact, and add Toast notifications.
+2. **Controls (#11, #13):** Add Refresh button and Sorting.
+3. **Pagination (#12):** Connect the frontend table to the paginated backend API.
+
+#### **Sprint 4: Security & Auth**
+
+*Focus: Locking it down.*
+
+1. **Auth Flow (#7):** Add a Login Screen.
+2. **Bot & Permissions (#6):** Finalize the Google Cloud settings.
+
+---
+
+Pending (The Final Sprint):
+
+#4 (Multiplayer Mode): The backend logs updated_by, but we haven't explicitly tested the "User A vs User B" UI experience yet.
+
+#6 (Bot Allowance): Not Done. We are still unverified.
+
+#7 (Auth Flow): Not Done. The dashboard is currently public. This is the main goal of Sprint 4.
