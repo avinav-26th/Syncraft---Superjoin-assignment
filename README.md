@@ -1,4 +1,4 @@
-# Syncraft ⚡️
+# <img width="20" height="30" alt="Syncraft logo compressed" src="https://github.com/user-attachments/assets/e0b9f873-8888-4936-afb7-b0f346e235ee" /> Syncraft
 
 **A Real-time, Two-Way Synchronization Engine between Google Sheets and a Custom Dashboard.**
 
@@ -215,4 +215,58 @@ While the current MVP demonstrates a robust single-tenant architecture, the road
 * **Offline Mode:** PWA (Progressive Web App) support to allow dashboard edits while offline, syncing changes to the queue once connectivity is restored.
 
 ---
+
+## ❓ Frequently Asked Questions (FAQ)
+
+### 🔹 General Usage
+**1. Where do I find the Google Apps Script code?**
+The full script is in `google-scripts/Code.gs`. Copy and paste it into **Extensions > Apps Script** in your Google Sheet.
+
+**2. Google says "This app isn't verified." Is it safe?**
+Yes. This appears because the script is a personal project, not published to the Marketplace. Click **Advanced > Go to (Untitled) (unsafe)** to proceed. The script only talks to your specific backend URL.
+
+**3. How can I test this right now?**
+* **Live Dashboard:** https://syncraft-dashboard.vercel.app
+* **Live Google Sheet:** https://docs.google.com/spreadsheets/d/1D1VMARdHCeD412JladGjc4TdQk1O78Bwrsfs_5vjRe4/edit?usp=sharing
+  *(Note: You can view the sheet. If you want to edit, please request access or fork the project to use your own credentials.)*
+
+---
+
+### 🔹 Technical Deep Dive (The "Genuine" Questions)
+
+**4. What happens if I rename a Column Header in Google Sheets?**
+The system treats this as a **schema evolution event**.
+* If you rename `Price` to `Cost`, the backend detects a "new" column named `col_cost` and adds it to the database.
+* The old `col_price` column remains in the database (to prevent accidental data loss), but it will stop receiving updates.
+
+**5. Does this system support Excel Formulas (e.g., `=SUM(A1:B1)`)?**
+Yes, but with a nuance.
+* **Sheet-to-DB:** The system syncs the **calculated value**, not the formula string. This ensures the database contains the actual data (e.g., `500`) rather than `=A1+B1`.
+* **DB-to-Sheet:** If the database updates a cell that contains a formula, the formula will be **overwritten** by the static value. This is standard behavior to prevent circular dependency loops.
+
+**6. Why are all database columns set to `TEXT` type?**
+Google Sheets is "loosely typed" (you can write "Free" in a "Price" column). If the MySQL database enforced strict `INT` or `DECIMAL` types, a single user typo would crash the synchronization queue.
+* **Decision:** We use `TEXT` for robustness during ingestion. Type casting/validation should happen at the Application Layer (API) or Reporting Layer, not the Ingestion Layer.
+
+**7. How do you handle "Race Conditions" (e.g., User A and User B edit the same cell instantly)?**
+We use a **"Last Write Wins"** strategy at the database level, but we prioritize **Auditability**.
+* Every edit is recorded in the `sync_history` table.
+* Even if User B overwrites User A's work milliseconds later, the history log captures *both* transactions, allowing an admin to review or rollback changes if needed.
+
+**8. What happens if I delete a row in Google Sheets?**
+Currently, the system is designed for **Additive Sync** (Create/Update).
+* Deleting a row in the Sheet does *not* delete it from the Database.
+* **Reasoning:** Hard deletions in 2-way sync are dangerous. A user accidentally deleting a row shouldn't wipe historical business data. A production version would implement a "Soft Delete" (marking a flag `is_deleted = true`), but for this demo, we prioritize data retention.
+
+**9. Why is there a delay when I create a new sheet?**
+This is a feature, not a bug, called **"Lazy Loading."**
+* To save bandwidth, we do not fetch data when you click "New Sheet."
+* We wait for the **First Edit**. This signal tells the backend, "This sheet is active and has data." Only then do we trigger the potentially expensive operation of downloading and importing the full dataset.
+
+**10. Why use Polling (5s) instead of WebSockets for the Dashboard?**
+* **Reliability:** WebSockets are stateful and often drop connections in serverless environments (like Render) when idle.
+* **Simplicity:** For a spreadsheet application, a 5-second "heartbeat" provides excellent perceived real-time performance without the massive infrastructure complexity of maintaining thousands of open socket connections.
+
+---
+
 **Made with 💚 by Avii**
