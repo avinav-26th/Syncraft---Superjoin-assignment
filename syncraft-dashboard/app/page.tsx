@@ -10,7 +10,7 @@ import DashboardView from '@/components/DashboardView';
 import Header from '@/components/Header';
 import Pagination from '@/components/Pagination';
 
-const BASE_URL = 'http://localhost:3000'; 
+const BASE_URL = 'https://syncraft-backend.onrender.com'; 
 const fetcher = async (url: string) => (await axios.get(url)).data;
 
 export default function Dashboard() {
