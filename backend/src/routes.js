@@ -155,7 +155,7 @@ router.post('/webhook/sheet-update', async (req, res) => {
   catch (e) { res.status(500).json({ error: 'Sync Failed' }); }
 });
 
-// 5. ADMIN UPDATE (Reverse Sync + History)
+// --- 5. ADMIN UPDATE (Reverse Sync + History) ---
 router.post('/api/admin-update', async (req, res) => {
   const { sheet_name, row_id, col_header, value, user } = req.body;
   const tableName = sanitizeTableName(sheet_name);
@@ -163,25 +163,37 @@ router.post('/api/admin-update', async (req, res) => {
   try {
     const connection = await pool.getConnection();
 
-    // A. Fetch Previous Value (For History)
+    // Prevent Double Prefixing (col_col_company) - If the frontend sends "col_company", we use it as is.
+    // If it sends "Company", we sanitize it to "col_company".
+    let colName = col_header;
+    if (!colName.startsWith('col_')) {
+        colName = sanitizeColumnName(col_header);
+    }
+    
+    // Safety check: Ensure the column actually exists in the DB to prevent injection
+    const [columns] = await connection.query(`SHOW COLUMNS FROM \`${tableName}\``);
+    const validColumns = columns.map(c => c.Field);
+    
+    if (!validColumns.includes(colName)) {
+        throw new Error(`Column '${colName}' does not exist in table '${tableName}'`);
+    }
+
+    // A. Fetch Previous Value
     const [existingRows] = await connection.query(
       `SELECT * FROM \`${tableName}\` WHERE row_id = ?`, [row_id]
     );
     const prevData = existingRows.length > 0 ? existingRows[0] : null;
 
     // B. Update Database
-    const colName = sanitizeColumnName(col_header);
-    if (colName) {
-       await connection.query(
-          `UPDATE \`${tableName}\` SET \`${colName}\` = ? WHERE row_id = ?`, 
-          [value, row_id]
-       );
-    }
+    await connection.query(
+      `UPDATE \`${tableName}\` SET \`${colName}\` = ? WHERE row_id = ?`, 
+      [value, row_id]
+    );
 
-    // C. Create "New Value" Object (simulated)
+    // C. Create "New Value" Object
     const newData = { ...prevData, [colName]: value };
 
-    // D. Insert into History Table
+    // D. Insert into History
     await connection.query(`
       INSERT INTO sync_history (sheet_name, row_id, prev_value, new_value, updated_by, timestamp)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -196,7 +208,7 @@ router.post('/api/admin-update', async (req, res) => {
 
     connection.release();
 
-    // 5. Update Google Sheet (Fire and Forget to avoid blocking)
+    // E. Update Google Sheet in Background (no await)
     updateSheetCell(process.env.SPREADSHEET_ID, sheet_name, row_id, col_header, value)
       .catch(err => console.error("Sheet Update BG Error:", err));
 
