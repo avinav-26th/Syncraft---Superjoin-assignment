@@ -12,6 +12,6 @@
 12. we should make the table that it can be customisable, to how certain columns and rows only, and also add paginations and infinte scroll option
 13. the table in our dashboard should be sortable, according to row number and last updated, both in increasig and decreasing order
 
-14. changes: hard-coded localhost links to actual links, codebase-format, remove comments, readme, description, deploy, publish, SS, video explanation, submit
+14. changes: hard-coded localhost links to actual links, readme, description, deploy, publish, SS, video explanation, submit
 
 15. add an option to make those google email ids as admin as well

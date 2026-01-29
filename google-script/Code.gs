@@ -1,8 +1,7 @@
-// Phase 3: Google Apps Script Logic (Sprint 1: Robust Version)
+// Phase 3: Google Apps Script Logic
 
 // ---------------- CONFIGURATION ----------------
-// REPLACE THIS with your actual Ngrok URL (No trailing slash)
-var BACKEND_URL = "https://YOUR-NGROK-URL.ngrok-free.app"; 
+var BACKEND_URL = "https://syncraft-backend.onrender.com"; 
 // -----------------------------------------------
 
 function syncToBackend(e) {
@@ -36,7 +35,7 @@ function syncToBackend(e) {
     var rowObject = {};
     
     headers.forEach(function(header, index) {
-      // FIX: Unnamed Columns -> "Column_3" fallback
+      // Unnamed Columns -> "Column_3" fallback
       var key = header ? header : "Column_" + (index + 1);
       rowObject[key] = rowValues[index];
     });
@@ -70,5 +69,5 @@ function syncToBackend(e) {
 
 function setup() {
   var ui = SpreadsheetApp.getUi();
-  ui.alert("Syncraft Sprint 1 is Live!");
+  ui.alert("Syncraft is Live and will be listening to the changes!");
 }

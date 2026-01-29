@@ -59,7 +59,7 @@ async function initDB() {
       if (e.errno !== 1060) console.error("History Migration Warning:", e.message);
     }
     
-    console.log("✅ Database Ready (Sprint 2 Enabled).");
+    console.log("✅ Database Ready!");
 
   } catch (error) {
     console.error("❌ DB Init Error:", error);
