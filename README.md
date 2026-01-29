@@ -5,7 +5,7 @@
 Syncraft allows users to manage Google Sheets data from a modern, secure web interface. Changes made in the Dashboard reflect instantly in the Sheet, and edits in the Sheet appear immediately on the Dashboard—all while preserving data integrity and handling multi-user conflicts.
 
 ---
-### [See Live](https://syncraft-dashboard.vercel.app/) |  [Demo](https://syncraft-dashboard.vercel.app/)
+### [See Live website](https://syncraft-dashboard.vercel.app/) |  [Walkthrough demo](https://drive.google.com/file/d/1jXnzX-vF4am5aBdLMTjul5_AcEuznD9m/view?usp=drive_link)
 
 ## 🚀 Key Features (The "Nuances" Handled)
 
@@ -100,14 +100,90 @@ Add an installable Trigger: `Function: handleEdit` -> `Event Source: Spreadsheet
 
 ## 📸 Screenshots
 
+<img width="975" height="794" alt="Screenshot (29)" src="https://github.com/user-attachments/assets/9a5c8df0-37ad-495b-a603-f9a878af8dd8" />
+<img width="1918" height="919" alt="Screenshot (23)" src="https://github.com/user-attachments/assets/51ce9384-42d1-4130-b338-9e9e49ed8645" />
+<img width="1900" height="910" alt="Screenshot (24)" src="https://github.com/user-attachments/assets/f8bb128a-8738-41fd-b3c8-d20438a09930" />
+<img width="1919" height="921" alt="Screenshot (25)" src="https://github.com/user-attachments/assets/74468e5a-ead5-44ae-846f-008d7e6a7d5c" />
+<img width="609" height="359" alt="Screenshot (27)" src="https://github.com/user-attachments/assets/47207471-61eb-47ab-b672-a050137097b0" />
+<img width="499" height="247" alt="Screenshot (28)" src="https://github.com/user-attachments/assets/1466b00c-e37c-44fa-931f-1ab49da885fd" />
+<img width="467" height="311" alt="Screenshot (26)" src="https://github.com/user-attachments/assets/8c70e308-49ad-498f-b97c-4043b20e00b9" />
+
 ---
 
-## 🧪 Edge Case Handling Details
-* **Diff Tracking:** The history log calculates the difference between old and new JSON states to highlight only specific cell changes.
+## 🛠️ Engineering Challenges & Edge Cases Handling Details
 
-* **Port Collision:** The backend runs on Port 5000 to leave Port 3000 open for Next.js and OAuth callbacks.
+Building a true 2-way sync involves handling race conditions, data type mismatches, and infrastructure timeouts. Below is a detailed log of the specific nuances and edge cases handled in this architecture.
 
-* **Empty Columns:** The sync engine automatically assigns placeholder names (Column_5) to unnamed headers to prevent SQL crashes.
+### 1. The "Ghost Data" & Lazy Loading Problem
+* **Challenge:** When a user creates a new sheet and makes a single edit, naive webhooks only send that single row. If the backend creates a table based on just that row, the rest of the existing data in the sheet is lost.
+* **Solution:** Implemented a **"Smart Import" Logic**. The backend checks if the table exists and has data. If the table is missing or practically empty, the first webhook trigger forces a **Full Sheet Fetch** to populate the initial state. Subsequent edits switch to lightweight single-row `UPSERT` operations.
+
+### 2. Infrastructure & "Cold" Connections
+* **Challenge:** Cloud databases (like TiDB Serverless) sever idle connections after 5-10 minutes, causing `ECONNRESET` errors when the backend tries to sync after a period of inactivity.
+* **Solution:** Implemented a **Database Heartbeat** mechanism that pings the database every 10 seconds to keep the connection pool active and "hot," ensuring instant response times for webhooks.
+
+### 3. Schema Sanitization & "Double Prefixing"
+* **Challenge:** SQL tables cannot have columns with spaces or special characters. We sanitize headers (e.g., `Market Value` → `col_market_value`). However, sending this back to the frontend sometimes resulted in recursive sanitization (e.g., `col_col_market_value`).
+* **Solution:** Built a smart sanitizer that detects existing prefixes and prevents double-labeling. Additionally, the backend performs a "Fuzzy Match" lookup when writing back to Google Sheets, correctly mapping `col_model` in the DB to `Model` in the Sheet.
+
+### 4. Batch Operations (Multiplayer Usage)
+* **Challenge:** Standard Google Apps Script `onEdit` triggers often fail or only capture the top-left cell when a user pastes a large block of data (e.g., 50 rows at once).
+* **Solution:** The Apps Script logic was upgraded to detect `range` height. If multiple rows are edited, it iterates through the range and sends a **Batch Payload** ensuring every single row in the paste operation is synced to the database.
+
+### 5. Silent Failures & Security
+* **Challenge:** Securely managing `service-account.json` keys in a production environment (Render) without committing them to Git.
+* **Solution:** Utilized Render's **Secret Files** mount to securely inject credentials at runtime (`/etc/secrets/`), allowing the application to authenticate with Google APIs without exposing sensitive keys in the codebase.
+
+### 6. Empty & Duplicate Headers
+* **Challenge:** Users often leave columns blank or name them identically, which crashes SQL `CREATE TABLE` commands.
+* **Solution:** The sync engine automatically assigns placeholder names (e.g., `Column_5`, `Column_6`) to unnamed headers. This ensures the SQL schema generation never fails, even with messy user data.
+
+### 7. Granular Diff Tracking
+* **Challenge:** In a high-frequency edit environment, it is difficult to visualize exactly what changed in a row with many columns.
+* **Solution:** The history log captures both the `prev_value` and `new_value` states as JSON. The frontend uses this to calculate the difference, highlighting specific cell changes in the audit log rather than just showing a generic "Row Updated" message.
+
+### 8. Port Collision & Environment Isolation
+* **Challenge:** Running a full-stack Next.js app alongside an Express API locally often leads to port conflicts, especially when handling OAuth callbacks on `localhost:3000`.
+* **Solution:** Engineered the architecture to run the Backend API strictly on **Port 5000** while keeping the Next.js Frontend on **Port 3000**. This isolation ensures that OAuth redirects and proxy rewrites function correctly without "Address already in use" errors during development.
+
+---
+
+## 🧠 Architecture Decision Record (ADR)
+
+### 1. Why Webhooks + Smart Polling over WebSockets?
+* **Decision:** We utilized Google Apps Script Webhooks for Sheet-to-DB sync and React Query "Smart Polling" for DB-to-Dashboard sync.
+* **Reasoning:**
+    * **Statelessness:** WebSockets require maintaining persistent stateful connections, which complicates horizontal scaling (serverless environments like Render often kill idle socket connections).
+    * **Reliability:** Webhooks are retriable. If the server is down, the edit event isn't lost in a dropped socket connection; it can be logged or retried.
+    * **Nature of Data:** Spreadsheet edits are human-speed events (seconds), not high-frequency trading (milliseconds). A 3-5 second poll interval provides a "perceived real-time" experience with significantly lower infrastructure complexity.
+
+### 2. Why "Lazy Loading" (Snapshot vs. Stream)?
+* **Decision:** The system does not import data immediately upon sheet creation. It waits for the first user edit to trigger a full snapshot import.
+* **Reasoning:**
+    * **Resource Efficiency:** Prevents the database from being flooded with stale or unused sheets. We only incur the cost of storage and processing for sheets that are actively being worked on.
+    * **Performance:** Subsequent updates use lightweight `UPSERT` operations (single row payload) rather than re-scanning the entire sheet, ensuring O(1) performance for edits regardless of sheet size.
+
+### 3. Handling Scale (100 Million Records)
+* **Current implementation:**
+    * **Server-Side Pagination:** The dashboard never fetches "all" data. It fetches chunks (`LIMIT 50 OFFSET X`), ensuring the frontend remains snappy even with million-row tables.
+    * **Incremental Sync:** The sync engine processes only the *delta* (changes), never the full dataset after the initial load.
+* **Future Scale Strategy:**
+    * **Database Sharding:** For 100M+ records, we would shard the MySQL tables based on `sheet_id`.
+    * **Queue-Based Ingestion:** Instead of processing webhooks synchronously (which might timeout on massive pastes), we would push events to a Redis Queue (BullMQ) and process them via background workers.
+
+### 4. Authentication Strategy (Google Only)
+* **Decision:** Restricted login to Google OAuth.
+* **Reasoning:** Since the core integration target is Google Sheets, the user *must* have a Google identity. Implementing a separate Email/Password flow adds friction and security surface area without adding value to the core workflow.
+
+### 5. Why a Standalone Dashboard vs. Spreadsheet Extension?
+* **Decision:** Built a separate full-stack React application rather than an embedded Google Workspace Add-on.
+* **Reasoning:**
+    * **Control:** A standalone app offers complete control over the UI/UX rendering engine (React) without the limitations of Google's Apps Script HTML Service (CardService).
+    * **Observability:** It decouples the "View" from the "Source." If Google Sheets goes down, the data remains accessible and queryable via the Dashboard.
+
+### 6. Conflict Resolution & Audit History
+* **Decision:** Implemented a `sync_history` table that logs `prev_value` and `new_value` for every cell change.
+* **Reasoning:** In a 2-way sync system, "Last Write Wins" is the default strategy, but it is destructive. The history log acts as a safety net, allowing users to trace *who* overwrote data and roll back if necessary (a critical feature for multi-user environments).
 
 ---
 
