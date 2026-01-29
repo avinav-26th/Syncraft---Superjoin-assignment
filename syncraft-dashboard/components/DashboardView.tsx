@@ -23,9 +23,9 @@ export default function DashboardView({
   // 1. Loading State
   if (isLoading) return <TableSkeleton />;
 
-  // 2. History View (SAFE GUARDED)
+  // 2. History View
   if (view === 'history') {
-    // CRITICAL FIX: We must check if 'data' is actually an Array. 
+    // We must check if 'data' is actually an Array.
     // If it's still the old Table Object (from keepPreviousData), we treat it as loading/empty.
     const historyData = Array.isArray(data) ? data : [];
     return <ConflictLog history={historyData} />;

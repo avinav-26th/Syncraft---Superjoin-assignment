@@ -22,10 +22,10 @@ async function initDB() {
   try {
     connection = await pool.getConnection();
 
-    // 1. CLEANUP (Ghost Table Check)
+    // CLEANUP (Ghost Table Check)
     await connection.query("DROP TABLE IF EXISTS sheets_data");
 
-    // 2. SYNC HISTORY TABLE (Now with 'prev_value')
+    // SYNC HISTORY TABLE (Now with 'prev_value')
     await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_history (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -49,7 +49,7 @@ async function initDB() {
       if (e.errno !== 1060) console.error("History Migration Warning:", e.message);
     }
 
-    // [MIGRATION] Add 'sheet_name' if missing (Double check from last sprint)
+    // [MIGRATION] Add 'sheet_name' if missing
     try {
       await connection.query(`
         ALTER TABLE sync_history 

@@ -1,7 +1,7 @@
 // backend/src/googleSheet.js
 const { google } = require('googleapis');
 const path = require('path');
-const { sanitizeColumnName } = require('./schema'); // [NEW] Import sanitizer
+const { sanitizeColumnName } = require('./schema');
 
 const KEY_PATH = path.join(__dirname, '..', 'service-account.json');
 
@@ -15,7 +15,7 @@ async function updateSheetCell(spreadsheetId, sheetName, row, colHeader, value) 
     const client = await auth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
 
-    // 1. Fetch ALL Headers from the Sheet
+    // Fetch ALL Headers from the Sheet
     const headerRes = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: `${sheetName}!1:1`,
@@ -27,7 +27,7 @@ async function updateSheetCell(spreadsheetId, sheetName, row, colHeader, value) 
 
     const realHeaders = headerRes.data.values[0]; // e.g. ["Name", "Profit %", "Top Sub"]
     
-    // 2. [FIX] Smart Match Logic
+    // Smart Match Logic
     // We loop through real headers, sanitize them, and see if they match the DB column name
     let colIndex = -1;
 
@@ -41,7 +41,7 @@ async function updateSheetCell(spreadsheetId, sheetName, row, colHeader, value) 
       }
     }
 
-    // Fallback: exact match check (just in case)
+    // Fallback: exact match check
     if (colIndex === -1) {
       colIndex = realHeaders.indexOf(colHeader);
     }
@@ -52,7 +52,7 @@ async function updateSheetCell(spreadsheetId, sheetName, row, colHeader, value) 
 
     const colLetter = String.fromCharCode(65 + colIndex);
     
-    // 3. Construct Range & Write
+    // Constructing Range & Write
     const range = `${sheetName}!${colLetter}${row}`;
 
     await sheets.spreadsheets.values.update({

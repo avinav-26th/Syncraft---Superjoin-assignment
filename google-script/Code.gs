@@ -11,7 +11,7 @@ function syncToBackend(e) {
   var sheet = e.source.getActiveSheet();
   var sheetName = sheet.getName();
   
-  // 1. Handle Multi-Row Ranges (Fix for drag-to-fill crashes)
+  // 1. Handle Multi-Row Ranges
   var range = e.range;
   var startRow = range.getRow();
   var numRows = range.getNumRows();
@@ -49,10 +49,10 @@ function syncToBackend(e) {
 
   // 4. Send Batch Payload
   var payload = {
-    sheet_name: sheetName, // [New] Identify which tab this came from
+    sheet_name: sheetName,
     user: Session.getActiveUser().getEmail() || "Anonymous",
     timestamp: new Date().toISOString(),
-    changes: changes // [New] Sending an array of rows
+    changes: changes // Sending an array of rows
   };
 
   try {

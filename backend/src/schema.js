@@ -1,10 +1,7 @@
 // backend/src/schema.js
 const { pool } = require('./db');
 
-/**
- * Converts "Inventory List!" -> "sheet_inventory_list_"
- * Strictly enforces SQL naming conventions to prevent errors.
- */
+// Converts "Inventory List!" -> "sheet_inventory_list_" - Strictly enforces SQL naming conventions to prevent errors.
 function sanitizeTableName(sheetName) {
   if (!sheetName) return 'sheet_unknown';
   // 1. Lowercase, replace non-alphanumeric with underscore
@@ -13,17 +10,13 @@ function sanitizeTableName(sheetName) {
   return `sheet_${safeName}`;
 }
 
-/**
- * Ensures a table exists for the specific sheet.
- * Also ensures all columns in 'headers' exist in that table.
- */
+// Ensures a table exists for the specific sheet. Also ensures all columns in 'headers' exist in that table.
 async function syncTableSchema(rawSheetName, headers) {
   const connection = await pool.getConnection();
   const tableName = sanitizeTableName(rawSheetName);
   
   try {
     // 1. Create Table if it doesn't exist (Dynamic Table Creation)
-    // Note: 'row_id' is the PRIMARY KEY again! (Simple and Clean)
     await connection.query(`
       CREATE TABLE IF NOT EXISTS \`${tableName}\` (
         row_id INT PRIMARY KEY,

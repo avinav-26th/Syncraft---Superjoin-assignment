@@ -21,15 +21,13 @@ async function handleSheetUpdate(payload) {
     for (const change of changes) {
       const { row_id, data } = change;
       
-      // [SPRINT 2 NEW STEP]: Fetch the "Loser" (Existing Data) first
-      // We do this BEFORE the update so we know what we are discarding.
+      // Fetch the "Loser" (Existing Data) first
       const [existingRows] = await connection.query(
         `SELECT * FROM \`${tableName}\` WHERE row_id = ?`,
         [row_id]
       );
       const prevData = existingRows.length > 0 ? existingRows[0] : null;
 
-      // --- Start of UPSERT Logic ---
       const columns = [];
       const values = [row_id]; 
       const updates = [];     
@@ -54,10 +52,8 @@ async function handleSheetUpdate(payload) {
       `;
 
       await connection.query(query, values);
-      // --- End of UPSERT Logic ---
 
-      // [SPRINT 2 NEW STEP]: Log Both Values
-      // If prevData is null, it means it was a pure INSERT (New Row)
+      // Log Both Values - If prevData is null, it means it was a pure INSERT (New Row)
       await connection.query(`
         INSERT INTO sync_history (sheet_name, row_id, prev_value, new_value, updated_by, timestamp)
         VALUES (?, ?, ?, ?, ?, ?)

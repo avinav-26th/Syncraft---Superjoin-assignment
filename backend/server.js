@@ -5,7 +5,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const { initDB } = require('./src/db'); 
-const routes = require('./src/routes'); // [NEW] Import the router
+const routes = require('./src/routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;

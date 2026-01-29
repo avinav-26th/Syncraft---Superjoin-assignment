@@ -1,90 +1,82 @@
 "use client";
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'; // [FIX] Import keepPreviousData
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { useSession } from "next-auth/react";
 import toast, { Toaster } from 'react-hot-toast';
-import { RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import Sidebar from '@/components/Sidebar';
 import DashboardView from '@/components/DashboardView';
+import Header from '@/components/Header';
+import Pagination from '@/components/Pagination';
 
-// --- TYPES (Fixes TypeScript Errors) ---
-interface Table {
-  raw: string;
-  display: string;
-}
-
-interface ApiResponse {
-  data: any[];
-  meta?: {
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  };
-}
-
-// Simple Fetcher Function
+const BASE_URL = 'http://localhost:3000'; 
 const fetcher = async (url: string) => (await axios.get(url)).data;
 
 export default function Dashboard() {
+  const { data: session } = useSession();
   const queryClient = useQueryClient();
   
-  // --- STATE ---
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [view, setView] = useState<'table' | 'history'>('table');
   const [page, setPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: 'row_id', direction: 'asc' });
 
-  // --- QUERY 1: Fetch List of Tables ---
-  const { data: tables = [] } = useQuery<Table[]>({
+  const { data: tables = [] } = useQuery({
     queryKey: ['tables'],
-    queryFn: () => fetcher('http://localhost:3000/api/tables'),
+    queryFn: () => fetcher(`${BASE_URL}/api/tables`),
   });
 
-  // [FIX] Replaces 'onSuccess': Effect to Auto-select first table
   useEffect(() => {
-    if (tables.length > 0 && !selectedTable) {
-      setSelectedTable(tables[0].display);
-    }
+    if (tables.length > 0 && !selectedTable) setSelectedTable(tables[0].display);
   }, [tables, selectedTable]);
 
-  // --- QUERY 2: Fetch Sheet Data ---
-  const { data: sheetData, isLoading, isError, isFetching } = useQuery<any>({ // Type as any for flexibility between history/table
+  const { data: sheetData, isLoading, isError, isFetching } = useQuery<any>({
     queryKey: ['sheet', selectedTable, view, page, sortConfig],
     queryFn: () => {
       if (!selectedTable) return null;
-      if (view === 'history') return fetcher(`http://localhost:3000/api/history/${selectedTable}`);
+      if (view === 'history') return fetcher(`${BASE_URL}/api/history/${selectedTable}`);
       
       const params = `?page=${page}&limit=50&sortBy=${sortConfig.key}&order=${sortConfig.direction}`;
-      return fetcher(`http://localhost:3000/api/sheets/${selectedTable}${params}`);
+      return fetcher(`${BASE_URL}/api/sheets/${selectedTable}${params}`);
     },
     enabled: !!selectedTable,
-    placeholderData: keepPreviousData, // [FIX] v5 Syntax for "Keep Previous Data"
-    refetchInterval: 5000,
+    placeholderData: keepPreviousData,
+    refetchInterval: 3000,
   });
 
-  // --- MUTATION: Handle Saves ---
   const saveMutation = useMutation({
-    mutationFn: (payload: any) => axios.post('http://localhost:3000/api/admin-update', payload),
+    mutationFn: (payload: any) => axios.post(`${BASE_URL}/api/admin-update`, payload),
     onSuccess: () => {
       toast.success("Saved!");
-      // [FIX] v5 Syntax: Pass object with queryKey
       queryClient.invalidateQueries({ queryKey: ['sheet', selectedTable] });
     },
     onError: () => toast.error("Save Failed")
   });
 
   const handleSave = (rowId: number, colHeader: string, value: string, sheetName: string) => {
-    saveMutation.mutate({ sheet_name: sheetName, row_id: rowId, col_header: colHeader, value });
+    saveMutation.mutate({ 
+      sheet_name: sheetName, 
+      row_id: rowId, 
+      col_header: colHeader, 
+      value,
+      // Sending identity. Backend now listens for this.
+      user: session?.user?.email || 'Dashboard Admin' 
+    });
   };
 
   const handleSort = (key: string) => {
     setSortConfig(curr => ({ key, direction: curr.key === key && curr.direction === 'asc' ? 'desc' : 'asc' }));
   };
 
-  // Helper for Pagination Logic (Safe Access)
-  const totalPages = sheetData?.meta?.totalPages || 1;
+  // Live Logic - Checks for changes in the last 60 seconds
+  const isLive = sheetData?.data?.some((row: any) => {
+    if (!row.last_updated_at) return false;
+    // Parse Date carefully
+    const rowTime = new Date(row.last_updated_at).getTime();
+    const now = new Date().getTime();
+    return (now - rowTime) < 60000; 
+  });
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
@@ -98,19 +90,15 @@ export default function Dashboard() {
       />
 
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Top Header */}
-        <div className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shadow-sm z-20">
-          <div className="flex items-center gap-4">
-            <h2 className="text-lg font-bold text-slate-800">{selectedTable || "Dashboard"}</h2>
-            {isFetching && !isLoading && <span className="text-xs text-blue-500 animate-pulse font-medium">Updating...</span>}
-          </div>
-          {/* [FIX] v5 Syntax for invalidateQueries */}
-          <button onClick={() => queryClient.invalidateQueries({ queryKey: ['sheet'] })} className="p-2 hover:bg-slate-100 rounded-full text-slate-500 hover:text-blue-600 transition-all">
-            <RefreshCw size={18} className={isFetching ? "animate-spin text-blue-500" : ""} />
-          </button>
-        </div>
+        <Header 
+          title={selectedTable}
+          isLive={!!isLive} 
+          isFetching={isFetching}
+          isLoading={isLoading}
+          activeUsers={sheetData?.meta?.activeUsers || []}
+          onRefresh={() => queryClient.invalidateQueries({ queryKey: ['sheet'] })}
+        />
 
-        {/* Main Content Area */}
         <DashboardView 
           view={view}
           isLoading={isLoading}
@@ -122,19 +110,12 @@ export default function Dashboard() {
           sortConfig={sortConfig}
         />
 
-        {/* Footer (Pagination Controls) */}
         {view === 'table' && !isLoading && !isError && (
-          <div className="h-14 bg-white border-t border-slate-200 flex items-center justify-between px-6">
-            <span className="text-sm text-slate-500">Page {page} of {totalPages}</span>
-            <div className="flex gap-2">
-              <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-slate-50 flex items-center gap-1 text-sm text-slate-600">
-                <ChevronLeft size={16} /> Previous
-              </button>
-              <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-slate-50 flex items-center gap-1 text-sm text-slate-600">
-                Next <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
+          <Pagination 
+            page={page} 
+            totalPages={sheetData?.meta?.totalPages || 1}
+            onPageChange={setPage}
+          />
         )}
       </div>
     </div>
