@@ -16,7 +16,7 @@ export default function Sidebar({ tables, selectedTable, onSelect, activeView, o
           <img 
             src="../favicon.ico" 
             alt="Syncraft Logo" 
-            className="w-8 h-9"
+            className="w-6 h-7"
           />
           <h1 className="text-2xl font-extrabold text-blue-900">Syncraft.io</h1>
         </div>
