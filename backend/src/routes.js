@@ -5,6 +5,43 @@ const { pool } = require('./db');
 const { handleSheetUpdate } = require('./sync');
 const { updateSheetCell } = require('./googleSheet');
 const { sanitizeColumnName, sanitizeTableName } = require('./schema');
+const { getSheetNames, getSheetData } = require('./googleSheet');
+const { syncSheetToDB } = require('./sync');
+
+// 0. AUTO-DISCOVERY: Check for new sheets and sync them
+router.get('/api/tables', async (req, res) => {
+  try {
+    // 1. Get all tabs from Google
+    const googleSheets = await getSheetNames(process.env.SPREADSHEET_ID);
+    
+    // 2. Get existing tables from MySQL
+    const [dbTables] = await pool.query("SHOW TABLES");
+    const existingTables = dbTables.map(row => Object.values(row)[0]);
+
+    // 3. Find new sheets that aren't in DB yet
+    const newSheets = googleSheets.filter(sheet => {
+        const sanitized = sanitizeTableName(sheet); // e.g., "Super Cars" -> "super_cars"
+        return !existingTables.includes(sanitized) && sanitized !== 'sync_history';
+    });
+
+    // 4. [AUTO-DISCOVERY] Sync the new sheets immediately
+    for (const sheet of newSheets) {
+        console.log(`🆕 Discovered new sheet: ${sheet}. Syncing...`);
+        const data = await getSheetData(process.env.SPREADSHEET_ID, sheet);
+        await syncSheetToDB(sheet, data); // Create the table now
+    }
+
+    // 5. Return the list (now including the new ones)
+    const tablesList = googleSheets.map(name => ({
+        display: name,
+        tableName: sanitizeTableName(name)
+    }));
+
+    res.json(tablesList);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // 1. LIST TABLES
 router.get('/api/tables', async (req, res) => {

@@ -10,6 +10,19 @@ const auth = new google.auth.GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
+const getSheetNames = async (spreadsheetId) => {
+  try {
+    const response = await sheets.spreadsheets.get({
+      spreadsheetId,
+    });
+    // Extract titles of all tabs
+    return response.data.sheets.map(s => s.properties.title);
+  } catch (error) {
+    console.error("Error fetching sheet names:", error);
+    return [];
+  }
+};
+
 async function updateSheetCell(spreadsheetId, sheetName, row, colHeader, value) {
   try {
     const client = await auth.getClient();
