@@ -61,7 +61,7 @@ function syncToBackend(e) {
     // 3. Prepare Payload (Matches Backend Expectations EXACTLY)
     var payload = {
       sheet_name: sheetName,
-      row_id: currentRow, // [FIX] This is what we fixed earlier
+      row_id: currentRow,
       data: rowObject     // Sends full row data: { "ID": 1, "Price": 500 ... }
     };
 
