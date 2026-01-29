@@ -12,6 +12,7 @@ const pool = mysql.createPool({
   connectionLimit: 10,
   queueLimit: 0,
   enableKeepAlive: true,
+  keepAliveInitialDelay: 0, // Start keep-alive immediately
   connectTimeout: 60000,
   ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: false }
 });
@@ -25,14 +26,14 @@ async function initDB() {
     // CLEANUP (Ghost Table Check)
     await connection.query("DROP TABLE IF EXISTS sheets_data");
 
-    // SYNC HISTORY TABLE (Now with 'prev_value')
+    // SYNC HISTORY TABLE
     await connection.query(`
       CREATE TABLE IF NOT EXISTS sync_history (
         id INT AUTO_INCREMENT PRIMARY KEY,
         sheet_name VARCHAR(255),
         row_id INT NOT NULL,
-        prev_value TEXT,  -- [NEW] Stores the 'Loser' data
-        new_value TEXT,   -- [NEW] Stores the 'Winner' data
+        prev_value TEXT, 
+        new_value TEXT,  
         updated_by VARCHAR(255),
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -40,21 +41,14 @@ async function initDB() {
 
     // [MIGRATION] Add 'prev_value' if missing
     try {
-      await connection.query(`
-        ALTER TABLE sync_history 
-        ADD COLUMN prev_value TEXT AFTER row_id
-      `);
-      console.log("🔧 Migration: Added 'prev_value' to history.");
+      await connection.query(`ALTER TABLE sync_history ADD COLUMN prev_value TEXT AFTER row_id`);
     } catch (e) {
       if (e.errno !== 1060) console.error("History Migration Warning:", e.message);
     }
 
     // [MIGRATION] Add 'sheet_name' if missing
     try {
-      await connection.query(`
-        ALTER TABLE sync_history 
-        ADD COLUMN sheet_name VARCHAR(255) AFTER id
-      `);
+      await connection.query(`ALTER TABLE sync_history ADD COLUMN sheet_name VARCHAR(255) AFTER id`);
     } catch (e) {
       if (e.errno !== 1060) console.error("History Migration Warning:", e.message);
     }
@@ -67,5 +61,16 @@ async function initDB() {
     if (connection) connection.release();
   }
 }
+
+// The Heartbeat Mechanism - This pings the DB every 10 seconds to keep the connection "Hot".
+// Prevents 'ECONNRESET' errors from cloud databases.
+setInterval(async () => {
+    try {
+        await pool.query('SELECT 1');
+        console.log('💓 DB Heartbeat');
+    } catch (e) {
+        console.error('⚠️ DB Heartbeat Failed (Reconnecting...):', e.message);
+    }
+}, 10000);
 
 module.exports = { pool, initDB };

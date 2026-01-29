@@ -4,63 +4,56 @@ const router = express.Router();
 const { pool } = require('./db');
 const { handleSheetUpdate } = require('./sync');
 const { updateSheetCell } = require('./googleSheet');
-const { sanitizeColumnName, sanitizeTableName } = require('./schema');
 const { getSheetNames, getSheetData } = require('./googleSheet');
-const { syncSheetToDB } = require('./sync');
+const { syncSheetToDB, sanitizeTableName, sanitizeColumnName } = require('./sync');
 
-// 0. AUTO-DISCOVERY: Check for new sheets and sync them
+// 1. GET ALL TABLES (SMART DISCOVERY MODE)
+// Safe to poll frequently. Only syncs NEW or MISSING tables.
 router.get('/api/tables', async (req, res) => {
   try {
-    // 1. Get all tabs from Google
+    // A. Get Real Sheet Names from Google
     const googleSheets = await getSheetNames(process.env.SPREADSHEET_ID);
     
-    // 2. Get existing tables from MySQL
+    // B. Get Existing DB Tables
     const [dbTables] = await pool.query("SHOW TABLES");
     const existingTables = dbTables.map(row => Object.values(row)[0]);
 
-    // 3. Find new sheets that aren't in DB yet
-    const newSheets = googleSheets.filter(sheet => {
-        const sanitized = sanitizeTableName(sheet); // e.g., "Super Cars" -> "super_cars"
-        return !existingTables.includes(sanitized) && sanitized !== 'sync_history';
-    });
+    // C. SMART SYNC LOOP
+    for (const sheet of googleSheets) {
+        const tableName = sanitizeTableName(sheet);
+        
+        // Skip history table
+        if (tableName === 'sync_history') continue;
 
-    // 4. [AUTO-DISCOVERY] Sync the new sheets immediately
-    for (const sheet of newSheets) {
-        console.log(`🆕 Discovered new sheet: ${sheet}. Syncing...`);
-        const data = await getSheetData(process.env.SPREADSHEET_ID, sheet);
-        await syncSheetToDB(sheet, data); // Create the table now
+        // CHECK: Only sync if the table DOES NOT exist in MySQL
+        if (!existingTables.includes(tableName)) {
+            console.log(`🆕 Found New Sheet: ${sheet}. Syncing now...`);
+
+            // 1. Fetch Data
+            const data = await getSheetData(process.env.SPREADSHEET_ID, sheet);
+            
+            // 2. Sync (Create Table & Insert)
+            if (data.length > 0) {
+                await syncSheetToDB(sheet, data);
+                console.log(`✅ Created & Synced table: ${tableName}`);
+            } else {
+                console.log(`⚠️ Sheet ${sheet} exists but is empty. Waiting for data...`);
+            }
+        }
+        // If table exists, we do nothing. We assume the Webhook handles the updates.
     }
 
-    // 5. Return the list (now including the new ones)
+    // D. Return the Clean List
     const tablesList = googleSheets.map(name => ({
         display: name,
         tableName: sanitizeTableName(name)
     }));
 
     res.json(tablesList);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
-// 1. LIST TABLES
-router.get('/api/tables', async (req, res) => {
-  try {
-    const connection = await pool.getConnection();
-    const [rows] = await connection.query(`
-      SELECT TABLE_NAME 
-      FROM INFORMATION_SCHEMA.TABLES 
-      WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'sheet_%'
-    `, [process.env.DB_NAME]);
-    connection.release();
-    
-    const tables = rows.map(r => ({
-      raw: r.TABLE_NAME,
-      display: r.TABLE_NAME.replace('sheet_', '').replace(/_/g, ' ')
-    }));
-    res.json(tables);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to list tables' });
+    console.error("❌ Discovery Error:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -212,6 +205,34 @@ router.post('/api/admin-update', async (req, res) => {
   } catch (error) {
     console.error("❌ Update Error:", error.message);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// 6. EMERGENCY MANUAL SYNC (for testing purposes)
+router.get('/api/force-sync/:sheetName', async (req, res) => {
+  const { sheetName } = req.params;
+  try {
+    console.log(`🚨 Manual Force Sync triggered for: ${sheetName}`);
+    
+    const tableName = sanitizeTableName(sheetName); // Get the SQL table name
+    
+    // 1. Nuke the existing table
+    await pool.query(`DROP TABLE IF EXISTS \`${tableName}\``);
+    console.log(`🗑️ Dropped table: ${tableName} (Clean Start)`);
+
+    // 2. Fetch Data
+    const data = await getSheetData(process.env.SPREADSHEET_ID, sheetName);
+    
+    // 3. Sync if data exists
+    if (data.length > 0) {
+        await syncSheetToDB(sheetName, data);
+        res.send(`✅ Success! Dropped & Re-synced table: ${tableName}`);
+    } else {
+        res.send(`❌ Failed: Sheet '${sheetName}' found, but it is empty.`);
+    }
+  } catch (error) {
+    console.error(error);
+    res.send(`❌ Error: ${error.message}`);
   }
 });
 
