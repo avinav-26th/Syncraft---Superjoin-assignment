@@ -12,7 +12,14 @@ export default function Sidebar({ tables, selectedTable, onSelect, activeView, o
   return (
     <div className="w-64 bg-white border-r border-slate-200 flex flex-col h-full">
       <div className="p-6 border-b border-slate-100">
-        <h1 className="text-xl font-extrabold text-blue-900">Syncraft.</h1>
+        <div className="flex items-center justify-center gap-3">
+          <img 
+            src="../favicon.ico" 
+            alt="Syncraft Logo" 
+            className="w-8 h-9"
+          />
+          <h1 className="text-2xl font-extrabold text-blue-900">Syncraft.io</h1>
+        </div>
         <p className="text-xs text-slate-400 mt-1">Workspace Manager</p>
       </div>
 

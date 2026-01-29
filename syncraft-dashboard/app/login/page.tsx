@@ -24,8 +24,15 @@ function LoginContent() {
   return (
     <div className="w-full max-w-sm p-8 bg-white rounded-xl shadow-lg border border-slate-100 text-center">
         
-      <div className="mb-8">
-        <h1 className="text-2xl font-extrabold text-blue-900">Syncraft.</h1>
+      <div className="mb-8 flex flex-col items-center">
+        <div className="flex items-center justify-center gap-3">
+          <img 
+            src="../favicon.ico" 
+            alt="Syncraft Logo" 
+            className="w-7 h-8"
+          />
+          <h1 className="text-2xl font-extrabold text-blue-900">Syncraft.io</h1>
+        </div>
         <p className="text-sm text-slate-400 mt-2">Workspace Manager</p>
       </div>
 
